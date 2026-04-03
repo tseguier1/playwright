@@ -23,6 +23,7 @@ import tls from 'tls';
 import { assert } from '../../utils/isomorphic/assert';
 import { ManualPromise } from '../../utils/isomorphic/manualPromise';
 import { monotonicTime } from '../../utils/isomorphic/time';
+import { logPolitely } from '../registry/browserFetcher';
 
 // Implementation(partial) of Happy Eyeballs 2 algorithm described in
 // https://www.rfc-editor.org/rfc/rfc8305
@@ -44,6 +45,7 @@ class HttpHappyEyeballsAgent extends http.Agent {
 
 class HttpsHappyEyeballsAgent extends https.Agent {
   createConnection(options: http.ClientRequestArgs, oncreate?: (err: Error | null, socket?: net.Socket) => void): net.Socket | undefined {
+    console.log('Happy Eyeballs: createConnection', options);
     // There is no ambiguity in case of IP address.
     if (net.isIP(clientRequestArgsToHostName(options)))
       return tls.connect(options as tls.ConnectionOptions);
@@ -52,13 +54,13 @@ class HttpsHappyEyeballsAgent extends https.Agent {
 }
 
 // These options are aligned with the default Node.js globalAgent options.
-export const httpsHappyEyeballsAgent = new HttpsHappyEyeballsAgent({ keepAlive: true });
-export const httpHappyEyeballsAgent = new HttpHappyEyeballsAgent({ keepAlive: true });
+export const httpsHappyEyeballsAgent = new HttpsHappyEyeballsAgent({ keepAlive: true, family: 4 });
+export const httpHappyEyeballsAgent = new HttpHappyEyeballsAgent({ keepAlive: true, family: 4 });
 
 export async function createSocket(host: string, port: number): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
     if (net.isIP(host)) {
-      const socket = net.createConnection({ host, port });
+      const socket = net.createConnection({ host, port, family: 4 });
       socket.on('connect', () => resolve(socket));
       socket.on('error', error => reject(error));
     } else {
@@ -111,7 +113,7 @@ export async function createConnectionAsync(
 ): Promise<void> {
   const lookup = (options as any).__testHookLookup || lookupAddresses;
   const hostname = clientRequestArgsToHostName(options);
-  const addresses = await lookup(hostname);
+  const addresses = await lookup(hostname, options.family);
   const dnsLookupAt = monotonicTime();
   const sockets = new Set<net.Socket>();
   let firstError;
@@ -126,7 +128,9 @@ export async function createConnectionAsync(
   };
 
   const connected = new ManualPromise();
+  logPolitely(`Happy Eyeballs: Attempting to connect to ${hostname}:${options.port} with family ${options.family} at addresses ${addresses.map(a => a.address).join(', ')}`);
   for (const { address } of addresses) {
+    logPolitely(`Happy Eyeballs: Starting connection attempt to ${hostname}:${options.port} at ${address}`);
     const socket = useTLS ?
       tls.connect({
         ...(options as tls.ConnectionOptions),
@@ -137,7 +141,7 @@ export async function createConnectionAsync(
         ...options,
         port: options.port as number,
         host: address });
-
+    logPolitely(`Happy Eyeballs: Created socket for ${hostname}:${options.port} at ${address}`);
     (socket as any)[kDNSLookupAt] = dnsLookupAt;
 
     // Each socket may fire only one of 'connect', 'timeout' or 'error' events.
@@ -161,19 +165,25 @@ export async function createConnectionAsync(
     });
     socket.on('error', e => handleError(socket, e));
     sockets.add(socket);
-    await Promise.race([
-      connected,
-      new Promise(f => setTimeout(f, connectionAttemptDelayMs))
-    ]);
+    logPolitely(`Happy Eyeballs: Initiated connection attempt to ${hostname}:${options.port} at ${address}`);
+    try {
+      await Promise.race([
+        connected,
+        new Promise(f => setTimeout(f, connectionAttemptDelayMs))
+      ]);
+      logPolitely(`Happy Eyeballs: Connection attempt to ${hostname}:${options.port} at ${address} completed`);
+    } catch (e) {
+      logPolitely(`Happy Eyeballs: Connection attempt to ${hostname}:${options.port} at ${address} timed out after ${connectionAttemptDelayMs}ms: ${e instanceof Error ? e.message : e}`);
+    }
     if (connected.isDone())
       break;
   }
 }
 
-async function lookupAddresses(hostname: string): Promise<dns.LookupAddress[]> {
+async function lookupAddresses(hostname: string, family: number): Promise<dns.LookupAddress[]> {
   const addresses = await dns.promises.lookup(hostname, { all: true, family: 0, verbatim: true });
-  let firstFamily = addresses.filter(({ family }) => family === 6);
-  let secondFamily = addresses.filter(({ family }) => family === 4);
+  let firstFamily = !family || family === 6 ? addresses.filter(({ family }) => family === 6) : [];
+  let secondFamily = !family || family === 4 ? addresses.filter(({ family }) => family === 4) : [];
   // Make sure first address in the list is the same as in the original order.
   if (firstFamily.length && firstFamily[0] !== addresses[0]) {
     const tmp = firstFamily;
@@ -188,6 +198,7 @@ async function lookupAddresses(hostname: string): Promise<dns.LookupAddress[]> {
     if (secondFamily[i])
       result.push(secondFamily[i]);
   }
+  logPolitely(`Happy Eyeballs: DNS lookup for ${hostname} returned ${result.map(a => a.address).join(', ')}`);
   return result;
 }
 

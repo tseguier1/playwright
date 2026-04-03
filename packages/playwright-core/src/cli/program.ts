@@ -40,6 +40,7 @@ import type { Command } from '../utilsBundle';
 
 export { program } from '../utilsBundle';
 
+const dns = require('dns');
 const packageJSON = require('../../package.json');
 
 program
@@ -193,6 +194,7 @@ program
     .option('--force', 'force reinstall of stable browser channels')
     .option('--only-shell', 'only install headless shell when installing chromium')
     .option('--no-shell', 'do not install chromium headless shell')
+    .option('--family <family>', 'IP family to use when downloading browsers, either 4 or 6')
     .action(async function(args: string[], options: { withDeps?: boolean, force?: boolean, dryRun?: boolean, list?: boolean, shell?: boolean, noShell?: boolean, onlyShell?: boolean }) {
       // For '--no-shell' option, commander sets `shell: false` instead.
       if (options.shell === false)
