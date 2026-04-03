@@ -26,6 +26,7 @@ import type { Command } from '../utilsBundle';
 
 export { program } from '../utilsBundle';
 
+const dns = require('dns');
 const packageJSON = require('../../package.json');
 
 program
@@ -66,7 +67,7 @@ Examples:
   $ codegen
   $ codegen --target=python
   $ codegen -b webkit https://example.com`);
-
+dns.setDefaultResultOrder('ipv4first');
 program
     .command('install [browser...]')
     .description('ensure browsers necessary for this version of Playwright are installed')
@@ -76,7 +77,8 @@ program
     .option('--force', 'force reinstall of already installed browsers')
     .option('--only-shell', 'only install headless shell when installing chromium')
     .option('--no-shell', 'do not install chromium headless shell')
-    .action(async function(args: string[], options: { withDeps?: boolean, force?: boolean, dryRun?: boolean, list?: boolean, shell?: boolean, noShell?: boolean, onlyShell?: boolean }) {
+    .option('--family <family>', 'IP family to use when downloading browsers, either 4 or 6')
+    .action(async function(args: string[], options: { withDeps?: boolean, force?: boolean, dryRun?: boolean, list?: boolean, shell?: boolean, noShell?: boolean, onlyShell?: boolean, family?: number  }) {
       try {
         const { installBrowsers } = await import('./installActions');
         await installBrowsers(args, options);

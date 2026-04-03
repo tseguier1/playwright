@@ -21,6 +21,7 @@ import { ManualPromise } from '../../utils/isomorphic/manualPromise';
 import { httpRequest } from '../utils/network';
 import { extract } from '../../zipBundle';
 import { removeFolders } from '../utils/fileUtils';
+import { logPolitely } from './browserFetcher';
 
 export type DownloadParams = {
   title: string;
@@ -30,6 +31,7 @@ export type DownloadParams = {
   executablePath: string | undefined;
   socketTimeout: number;
   userAgent: string;
+  family: number | undefined;
 };
 
 function log(message: string) {
@@ -48,7 +50,7 @@ function downloadFile(options: DownloadParams): Promise<void> {
   let downloadedBytes = 0;
   let totalBytes = 0;
   let chunked = false;
-
+  logPolitely(`Starting download of ${options.title} from ${options.url} with ${JSON.stringify(options)}`);
   const promise = new ManualPromise<void>();
   httpRequest({
     url: options.url,
@@ -56,6 +58,7 @@ function downloadFile(options: DownloadParams): Promise<void> {
       'User-Agent': options.userAgent,
     },
     socketTimeout: options.socketTimeout,
+    family: Number(options.family),
   }, response => {
     log(`-- response status code: ${response.statusCode}`);
     if (response.statusCode !== 200) {

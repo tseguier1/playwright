@@ -569,7 +569,7 @@ export interface Executable {
 }
 
 interface ExecutableImpl extends Executable {
-  _install?: (force: boolean) => Promise<void>;
+  _install?: (force: boolean, family?: number) => Promise<void>;
   _dependencyGroup?: DependencyGroup;
   _isHermeticInstallation?: boolean;
 }
@@ -642,7 +642,7 @@ export class Registry {
       title: chromium.title,
       revision: chromium.revision,
       browserVersion: chromium.browserVersion,
-      _install: force => this._downloadExecutable(chromium, force, chromiumExecutable),
+      _install: (force, family) => this._downloadExecutable(chromium, force, chromiumExecutable, family),
       _dependencyGroup: 'chromium',
       _isHermeticInstallation: true,
     });
@@ -661,7 +661,7 @@ export class Registry {
       title: chromiumHeadlessShell.title,
       revision: chromiumHeadlessShell.revision,
       browserVersion: chromiumHeadlessShell.browserVersion,
-      _install: force => this._downloadExecutable(chromiumHeadlessShell, force, chromiumHeadlessShellExecutable),
+      _install: (force, family) => this._downloadExecutable(chromiumHeadlessShell, force, chromiumHeadlessShellExecutable, family),
       _dependencyGroup: 'chromium',
       _isHermeticInstallation: true,
     });
@@ -680,7 +680,7 @@ export class Registry {
       title: chromiumTipOfTreeHeadlessShell.title,
       revision: chromiumTipOfTreeHeadlessShell.revision,
       browserVersion: chromiumTipOfTreeHeadlessShell.browserVersion,
-      _install: force => this._downloadExecutable(chromiumTipOfTreeHeadlessShell, force, chromiumTipOfTreeHeadlessShellExecutable),
+      _install: (force, family) => this._downloadExecutable(chromiumTipOfTreeHeadlessShell, force, chromiumTipOfTreeHeadlessShellExecutable, family),
       _dependencyGroup: 'chromium',
       _isHermeticInstallation: true,
     });
@@ -699,7 +699,7 @@ export class Registry {
       title: chromiumTipOfTree.title,
       revision: chromiumTipOfTree.revision,
       browserVersion: chromiumTipOfTree.browserVersion,
-      _install: force => this._downloadExecutable(chromiumTipOfTree, force, chromiumTipOfTreeExecutable),
+      _install: (force, family) => this._downloadExecutable(chromiumTipOfTree, force, chromiumTipOfTreeExecutable, family),
       _dependencyGroup: 'chromium',
       _isHermeticInstallation: true,
     });
@@ -802,7 +802,7 @@ export class Registry {
       title: firefox.title,
       revision: firefox.revision,
       browserVersion: firefox.browserVersion,
-      _install: force => this._downloadExecutable(firefox, force, firefoxExecutable),
+      _install: (force, family) => this._downloadExecutable(firefox, force, firefoxExecutable, family),
       _dependencyGroup: 'firefox',
       _isHermeticInstallation: true,
     });
@@ -821,7 +821,7 @@ export class Registry {
       title: firefoxBeta.title,
       revision: firefoxBeta.revision,
       browserVersion: firefoxBeta.browserVersion,
-      _install: force => this._downloadExecutable(firefoxBeta, force, firefoxBetaExecutable),
+      _install: (force, family) => this._downloadExecutable(firefoxBeta, force, firefoxBetaExecutable, family),
       _dependencyGroup: 'firefox',
       _isHermeticInstallation: true,
     });
@@ -850,7 +850,7 @@ export class Registry {
       title: webkit.title,
       revision: webkit.revision,
       browserVersion: webkit.browserVersion,
-      _install: force => this._downloadExecutable(webkit, force, webkitExecutable),
+      _install: (force, family) => this._downloadExecutable(webkit, force, webkitExecutable, family),
       _dependencyGroup: 'webkit',
       _isHermeticInstallation: true,
     });
@@ -892,7 +892,7 @@ export class Registry {
       downloadURLs: this._downloadURLs(ffmpeg),
       title: ffmpeg.title,
       revision: ffmpeg.revision,
-      _install: force => this._downloadExecutable(ffmpeg, force, ffmpegExecutable),
+      _install: (force, family) => this._downloadExecutable(ffmpeg, force, ffmpegExecutable, family),
       _dependencyGroup: 'tools',
       _isHermeticInstallation: true,
     });
@@ -909,7 +909,7 @@ export class Registry {
       downloadURLs: this._downloadURLs(winldd),
       title: winldd.title,
       revision: winldd.revision,
-      _install: force => this._downloadExecutable(winldd, force, winlddExecutable),
+      _install: (force, family) => this._downloadExecutable(winldd, force, winlddExecutable, family),
       _dependencyGroup: 'tools',
       _isHermeticInstallation: true,
     });
@@ -925,7 +925,7 @@ export class Registry {
       downloadURLs: this._downloadURLs(android),
       title: android.title,
       revision: android.revision,
-      _install: force => this._downloadExecutable(android, force),
+      _install: (force, family) => this._downloadExecutable(android, force, undefined, family),
       _dependencyGroup: 'tools',
       _isHermeticInstallation: true,
     });
@@ -1051,7 +1051,7 @@ export class Registry {
       return await installDependenciesLinux(targets, dryRun);
   }
 
-  async install(executablesToInstall: Executable[], options?: { force?: boolean }) {
+  async install(executablesToInstall: Executable[], options?: { force?: boolean, family?: number }) {
     const executables = this._dedupe(executablesToInstall);
     await fs.promises.mkdir(registryDirectory, { recursive: true });
     const lockfilePath = path.join(registryDirectory, '__dirlock');
@@ -1106,7 +1106,7 @@ export class Registry {
           ].join('\n'), 1) + '\n\n');
           return;
         }
-        await executable._install(!!options?.force);
+        await executable._install(!!options?.force, options?.family);
       }
     } catch (e) {
       if (e.code === 'ELOCKED') {
@@ -1214,7 +1214,7 @@ export class Registry {
     return mirrors.map(mirror => `${mirror}/${downloadPath}`);
   }
 
-  private async _downloadExecutable(descriptor: BrowsersJSONDescriptor, force: boolean, executablePath?: string) {
+  private async _downloadExecutable(descriptor: BrowsersJSONDescriptor, force: boolean, executablePath?: string, family?: number) {
     const downloadURLs = this._downloadURLs(descriptor);
     if (!downloadURLs.length)
       throw new Error(`ERROR: Playwright does not support ${descriptor.name} on ${hostPlatform}`);
@@ -1234,7 +1234,7 @@ export class Registry {
     // max idle timeout. Unfortunately, we cannot rename it without breaking existing user workflows.
     const downloadSocketTimeoutEnv = getFromENV('PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT');
     const downloadSocketTimeout = +(downloadSocketTimeoutEnv || '0') || NET_DEFAULT_TIMEOUT;
-    await downloadBrowserWithProgressBar(title, descriptor.dir, executablePath, downloadURLs, downloadFileName, downloadSocketTimeout, force).catch(e => {
+    await downloadBrowserWithProgressBar(title, descriptor.dir, executablePath, downloadURLs, downloadFileName, downloadSocketTimeout, force, family).catch(e => {
       throw new Error(`Failed to download ${title}, caused by\n${e.stack}`);
     });
   }

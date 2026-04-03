@@ -87,7 +87,7 @@ export async function markDockerImage(dockerImageNameTemplate: string) {
   await writeDockerVersion(dockerImageNameTemplate);
 }
 
-export async function installBrowsers(args: string[], options: { withDeps?: boolean, force?: boolean, dryRun?: boolean, list?: boolean, shell?: boolean, noShell?: boolean, onlyShell?: boolean }) {
+export async function installBrowsers(args: string[], options: { withDeps?: boolean, force?: boolean, dryRun?: boolean, list?: boolean, shell?: boolean, noShell?: boolean, onlyShell?: boolean, family?: number }) {
   if (isLikelyNpxGlobal()) {
     console.error(wrapInASCIIBox([
       `WARNING: It looks like you are running 'npx playwright install' without first`,
@@ -132,7 +132,7 @@ export async function installBrowsers(args: string[], options: { withDeps?: bool
     const browsers = await registry.listInstalledBrowsers();
     printGroupedByPlaywrightVersion(browsers);
   } else {
-    await registry.install(executables, { force: options.force });
+    await registry.install(executables, { force: options.force, family: options.family });
     await registry.validateHostRequirementsForExecutablesIfNeeded(executables, process.env.PW_LANG_NAME || 'javascript').catch((e: Error) => {
       e.name = 'Playwright Host validation warning';
       console.error(e);

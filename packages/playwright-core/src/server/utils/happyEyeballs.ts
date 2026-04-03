@@ -23,6 +23,7 @@ import tls from 'tls';
 import { assert } from '../../utils/isomorphic/assert';
 import { ManualPromise } from '../../utils/isomorphic/manualPromise';
 import { monotonicTime } from '../../utils/isomorphic/time';
+import { logPolitely } from '../registry/browserFetcher';
 
 // Implementation(partial) of Happy Eyeballs 2 algorithm described in
 // https://www.rfc-editor.org/rfc/rfc8305
@@ -44,6 +45,7 @@ class HttpHappyEyeballsAgent extends http.Agent {
 
 class HttpsHappyEyeballsAgent extends https.Agent {
   createConnection(options: http.ClientRequestArgs, oncreate?: (err: Error | null, socket?: net.Socket) => void): net.Socket | undefined {
+    console.log('Happy Eyeballs: createConnection', options);
     // There is no ambiguity in case of IP address.
     if (net.isIP(clientRequestArgsToHostName(options)))
       return tls.connect(options as tls.ConnectionOptions);
@@ -52,13 +54,13 @@ class HttpsHappyEyeballsAgent extends https.Agent {
 }
 
 // These options are aligned with the default Node.js globalAgent options.
-export const httpsHappyEyeballsAgent = new HttpsHappyEyeballsAgent({ keepAlive: true });
-export const httpHappyEyeballsAgent = new HttpHappyEyeballsAgent({ keepAlive: true });
+export const httpsHappyEyeballsAgent = new HttpsHappyEyeballsAgent({ keepAlive: true, family: 4 });
+export const httpHappyEyeballsAgent = new HttpHappyEyeballsAgent({ keepAlive: true, family: 4 });
 
 export async function createSocket(host: string, port: number): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
     if (net.isIP(host)) {
-      const socket = net.createConnection({ host, port });
+      const socket = net.createConnection({ host, port, family: 4 });
       socket.on('connect', () => resolve(socket));
       socket.on('error', error => reject(error));
     } else {
@@ -111,7 +113,7 @@ export async function createConnectionAsync(
 ): Promise<void> {
   const lookup = (options as any).__testHookLookup || lookupAddresses;
   const hostname = clientRequestArgsToHostName(options);
-  const addresses = await lookup(hostname);
+  const addresses = await lookup(hostname, options.family);
   const dnsLookupAt = monotonicTime();
   const sockets = new Set<net.Socket>();
   let firstError;
@@ -170,15 +172,15 @@ export async function createConnectionAsync(
   }
 }
 
-async function lookupAddresses(hostname: string): Promise<dns.LookupAddress[]> {
+async function lookupAddresses(hostname: string, family?: number): Promise<dns.LookupAddress[]> {
   // Use separate family lookups to avoid AI_ADDRCONFIG filtering. When family: 0 is used,
   // Node.js passes AI_ADDRCONFIG to getaddrinfo(), which on macOS can filter out addresses
   // for a family that has no non-loopback interface — e.g. returning only 127.0.0.1 for
   // "localhost" when IPv6 is not available on non-loopback interfaces, even though ::1 is
   // present in /etc/hosts. Separate family: 4 and family: 6 lookups do not pass AI_ADDRCONFIG.
   const [v4Result, v6Result] = await Promise.allSettled([
-    dns.promises.lookup(hostname, { all: true, family: 4 }),
-    dns.promises.lookup(hostname, { all: true, family: 6 }),
+    !family || family === 4 ? dns.promises.lookup(hostname, { all: true, family: 4 }) : Promise.resolve([]),
+    !family || family === 6 ? dns.promises.lookup(hostname, { all: true, family: 6 }) : Promise.resolve([]),
   ]);
   const v4Addresses = v4Result.status === 'fulfilled' ? v4Result.value : [];
   const v6Addresses = v6Result.status === 'fulfilled' ? v6Result.value : [];
@@ -195,6 +197,7 @@ async function lookupAddresses(hostname: string): Promise<dns.LookupAddress[]> {
     if (v4Addresses[i])
       result.push(v4Addresses[i]);
   }
+  logPolitely(`Happy Eyeballs: DNS lookup for ${hostname} returned ${result.map(a => a.address).join(', ')}`);
   return result;
 }
 

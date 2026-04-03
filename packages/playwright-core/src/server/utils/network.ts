@@ -23,6 +23,7 @@ import { HttpsProxyAgent, SocksProxyAgent, getProxyForUrl } from '../../utilsBun
 import { httpHappyEyeballsAgent, httpsHappyEyeballsAgent } from './happyEyeballs';
 import { ManualPromise } from '../../utils/isomorphic/manualPromise';
 
+import { logPolitely } from '../registry/browserFetcher';
 import type net from 'net';
 import type { ProxySettings } from '../types';
 import type { Progress } from '../progress';
@@ -34,15 +35,18 @@ export type HTTPRequestParams = {
   data?: string | Buffer,
   rejectUnauthorized?: boolean,
   socketTimeout?: number,
+  family?: number,
 };
 
 export const NET_DEFAULT_TIMEOUT = 30_000;
 
 export function httpRequest(params: HTTPRequestParams, onResponse: (r: http.IncomingMessage) => void, onError: (error: Error) => void): { cancel(error: Error | undefined): void } {
   let url = new URL(params.url);
+  logPolitely(`HTTP request: ${params.method || 'GET'} ${params.url} with options ${JSON.stringify(params)}`);
   const options: https.RequestOptions = {
     method: params.method || 'GET',
     headers: params.headers,
+    family: params.family,
   };
   if (params.rejectUnauthorized !== undefined)
     options.rejectUnauthorized = params.rejectUnauthorized;
